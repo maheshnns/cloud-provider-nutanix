@@ -38,3 +38,5 @@ func GitPush(branch, dir string) error {
 func CreatePR(title, body, dir string) error {
 	return RunCmd("gh", []string{"pr", "create", "--title", title, "--body", body, "--base", "main"}, dir)
 }
+
+// GitPush pushes a branch.

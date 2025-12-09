@@ -37,11 +37,24 @@ jobs:
       - name: Install gh (CLI) for parity with prod runner
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl ca-certificates
-          GH_VER=$(curl -s https://api.github.com/repos/cli/cli/releases/latest | jq -r .tag_name)
-          curl -L "https://github.com/cli/cli/releases/latest/download/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
-          tar -xzf /tmp/gh.tar.gz -C /tmp
-          sudo mv /tmp/gh_*_linux_amd64/bin/gh /usr/local/bin/gh
+          # ensure jq is available to parse GitHub API responses
+          sudo apt-get install -y curl ca-certificates jq
+
+          # Try to fetch latest gh release tag and install from tarball
+          GH_VER=$(curl -fsS https://api.github.com/repos/cli/cli/releases/latest | jq -r .tag_name // true)
+          if [ -n "$GH_VER" ] && [ "$GH_VER" != "true" ]; then
+            echo "Installing gh ${GH_VER} from release tarball"
+            curl -fsSL "https://github.com/cli/cli/releases/latest/download/gh_${GH_VER}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz
+            tar -xzf /tmp/gh.tar.gz -C /tmp
+            sudo mv /tmp/gh_*_linux_amd64/bin/gh /usr/local/bin/gh
+          else
+            echo "Could not determine latest gh release tag; falling back to official apt package install"
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null 2>&1
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y gh
+          fi
           gh --version
 
       - name: Run CCM Helm sync (manual inputs)

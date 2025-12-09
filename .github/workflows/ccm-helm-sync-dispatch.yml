@@ -34,47 +34,10 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install gh (CLI) for parity with prod runner
+      - name: Ensure required tools
         run: |
           sudo apt-get update
-          # ensure jq is available to parse GitHub API responses
           sudo apt-get install -y curl ca-certificates jq
-
-          # Try to fetch latest gh release tag and install from tarball
-          # Safely extract tag_name using a quoted jq program; strip leading 'v' if present
-          GH_VER=$(curl -fsS https://api.github.com/repos/cli/cli/releases/latest | jq -r '.tag_name // empty' | sed 's/^v//')
-
-          install_from_tarball() {
-            local ver="$1"
-            local url="https://github.com/cli/cli/releases/latest/download/gh_${ver}_linux_amd64.tar.gz"
-            echo "Attempting tarball install from: ${url}"
-            if curl -fsSL "$url" -o /tmp/gh.tar.gz && tar -xzf /tmp/gh.tar.gz -C /tmp 2>/dev/null && sudo mv /tmp/gh_*_linux_amd64/bin/gh /usr/local/bin/gh; then
-              echo "gh installed from tarball (version ${ver})"
-              return 0
-            fi
-            return 1
-          }
-
-          if [ -n "$GH_VER" ]; then
-            echo "Resolved gh release tag: ${GH_VER}"
-            if install_from_tarball "$GH_VER"; then
-              true
-            else
-              echo "Tarball install failed; will fall back to apt package install"
-              GH_VER=""
-            fi
-          fi
-
-          if [ -z "$GH_VER" ]; then
-            echo "Installing gh via official apt repository"
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null 2>&1 || true
-            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg || true
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt-get update
-            sudo apt-get install -y gh
-          fi
-
-          gh --version
 
       - name: Run CCM Helm sync (manual inputs)
         env:

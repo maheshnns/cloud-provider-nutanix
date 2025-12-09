@@ -1,13 +1,16 @@
 // cmd/ccm-helm-sync/main.go
 // This tool automates the creation of a CCM Helm chart and changelog after a new CCM release.
-// Usage: go run main.go --ccm-repo nutanix-cloud-native/cloud-provider-nutanix --helm-repo nutanix/helm --token $GITHUB_TOKEN
+// Usage: go run ./cmd/ccm-helm-sync --ccm-repo nutanix-cloud-native/cloud-provider-nutanix --helm-repo maheshnns/helm --token $GITHUB_TOKEN
 
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,7 +26,7 @@ func main() {
 	flag.StringVar(&token, "token", os.Getenv("GITHUB_TOKEN"), "GitHub token")
 	flag.StringVar(&ccmTag, "ccm-tag", "", "CCM release tag (optional, defaults to latest)")
 	flag.BoolVar(&dryRun, "dry-run", false, "Run in dry-run mode: do not push branches or create PRs")
-	flag.StringVar(&releaseNotesFlag, "release-notes", "", "Provide release notes text to avoid requiring gh (requires --ccm-tag)")
+	flag.StringVar(&releaseNotesFlag, "release-notes", "", "Provide release notes text to avoid requiring release-lookup (requires --ccm-tag)")
 	flag.BoolVar(&testMode, "test", false, "Mark the run as a TEST; PRs and commits will be prefixed and include test metadata")
 	flag.Parse()
 
@@ -71,48 +74,13 @@ func main() {
 	}
 }
 
-func getReleaseNotesForTag(repo, tag, token string) (string, error) {
-	cmd := exec.Command("gh", "release", "view", tag, "--repo", repo, "--json", "body", "--jq", ".body")
-	cmd.Env = append(os.Environ(), "GITHUB_TOKEN="+token)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func getLatestReleaseTagAndNotes(repo, token string) (string, string, error) {
-	// Get tag
-	tagCmd := exec.Command("gh", "release", "view", "--repo", repo, "--json", "tagName,body", "--jq", ".tagName + '\n' + .body")
-	tagCmd.Env = append(os.Environ(), "GITHUB_TOKEN="+token)
-	out, err := tagCmd.Output()
-	if err != nil {
-		return "", "", err
-	}
-	lines := strings.SplitN(string(out), "\n", 2)
-	if len(lines) < 2 {
-		return strings.TrimSpace(string(out)), "", nil
-	}
-	return strings.TrimSpace(lines[0]), strings.TrimSpace(lines[1]), nil
-}
-
-func cloneHelmRepo(repo, token string) error {
-	url := normalizeCloneURL(repo, token)
-	cmd := exec.Command("git", "clone", url, "helm-repo")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
 // normalizeCloneURL accepts either an owner/repo (e.g. "maheshnns/helm") or
 // a full https URL (with or without .git) and returns a clone URL that embeds
 // the token for HTTPS authentication when appropriate.
 func normalizeCloneURL(repo, token string) string {
 	// If repo looks like an HTTP(S) URL, inject token into it
 	if strings.HasPrefix(repo, "http://") || strings.HasPrefix(repo, "https://") {
-		// Strip any trailing .git for normalization, we'll keep it if present
 		hasGit := strings.HasSuffix(repo, ".git")
-		// Remove scheme
 		schemeSep := "://"
 		parts := strings.SplitN(repo, schemeSep, 2)
 		if len(parts) != 2 {
@@ -121,7 +89,6 @@ func normalizeCloneURL(repo, token string) string {
 		hostAndPath := parts[1]
 		// If the URL already contains credentials (user@), avoid injecting
 		if strings.Contains(hostAndPath, "@") {
-			// already has creds; return as-is
 			return repo
 		}
 		if !hasGit {
@@ -141,6 +108,78 @@ func normalizeCloneURL(repo, token string) string {
 		r = r + ".git"
 	}
 	return fmt.Sprintf("https://%s@github.com/%s", token, r)
+}
+
+func getReleaseNotesForTag(repo, tag, token string) (string, error) {
+	owner, name := parseOwnerRepo(repo)
+	if owner == "" || name == "" {
+		return "", fmt.Errorf("invalid repo: %s", repo)
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, name, tag)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "token "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return "", fmt.Errorf("release tag not found: %s", tag)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to fetch release: status %d body: %s", resp.StatusCode, string(b))
+	}
+	var data struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(data.Body), nil
+}
+
+func getLatestReleaseTagAndNotes(repo, token string) (string, string, error) {
+	owner, name := parseOwnerRepo(repo)
+	if owner == "" || name == "" {
+		return "", "", fmt.Errorf("invalid repo: %s", repo)
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, name)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "token "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("failed to fetch latest release: status %d body: %s", resp.StatusCode, string(b))
+	}
+	var data struct {
+		TagName string `json:"tag_name"`
+		Body    string `json:"body"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(data.TagName), strings.TrimSpace(data.Body), nil
+}
+
+func cloneHelmRepo(repo, token string) error {
+	url := normalizeCloneURL(repo, token)
+	cmd := exec.Command("git", "clone", url, "helm-repo")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func updateChartAndChangelog(tag, releaseNotes string) error {
@@ -195,7 +234,7 @@ func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes 
 		fmt.Println("Dry-run mode enabled: skipping push and PR creation.")
 		fmt.Println("Would run:")
 		fmt.Printf("  git -C helm-repo push origin %s\n", branch)
-		fmt.Printf("  gh pr create --title \"%s\" --body \"%s\" --repo %s\n", prTitle, prBody, repo)
+		fmt.Printf("  curl -X POST -H 'Authorization: token <TOKEN>' -H 'Accept: application/vnd.github+json' https://api.github.com/repos/<OWNER>/<REPO>/pulls -d '{\"title\": \"%s\", \"head\": \"%s\", \"base\": \"main\", \"body\": \"%s\"}'\n", prTitle, branch, prBody)
 		fmt.Println("\nTo remove any local test branch run:")
 		fmt.Printf("  git -C helm-repo branch -D %s\n", branch)
 		return nil
@@ -205,8 +244,8 @@ func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes 
 		return fmt.Errorf("git push: %w", err)
 	}
 
-	if err := CreatePR(prTitle, prBody, "helm-repo"); err != nil {
-		return fmt.Errorf("gh pr create: %w", err)
+	if err := CreatePR(prTitle, prBody, "helm-repo", os.Getenv("GITHUB_TOKEN"), repo, branch); err != nil {
+		return fmt.Errorf("create PR via API: %w", err)
 	}
 
 	fmt.Println("\nPR created. To remove the test PR and branch after testing, run:")

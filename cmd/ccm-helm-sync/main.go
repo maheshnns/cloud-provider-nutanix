@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -99,9 +100,7 @@ func normalizeCloneURL(repo, token string) string {
 
 	// If repo starts with github.com/, strip that prefix
 	r := repo
-	if strings.HasPrefix(r, "github.com/") {
-		r = strings.TrimPrefix(r, "github.com/")
-	}
+	r = strings.TrimPrefix(r, "github.com/")
 
 	// Now treat as owner/repo form
 	if !strings.HasSuffix(r, ".git") {
@@ -203,7 +202,11 @@ func updateChartAndChangelog(tag, releaseNotes string) error {
 }
 
 func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes, token string) error {
-	branch := "test/ccm-automation-dry-run-" + tag
+	// Use a unique branch name per run to avoid non-fast-forward failures
+	// Example: test/ccm-automation-20251209-150405-v0.6.0
+	ts := time.Now().UTC().Format("20060102-150405")
+	safeTag := strings.TrimPrefix(tag, "v")
+	branch := fmt.Sprintf("test/ccm-automation-%s-%s", ts, safeTag)
 	chartDir := "charts/cloud-provider-nutanix"
 	if err := GitBranch(branch, "helm-repo"); err != nil {
 		return fmt.Errorf("git checkout -b: %w", err)

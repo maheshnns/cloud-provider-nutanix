@@ -35,5 +35,6 @@ coverage.xml
 
 # Ignore local helm repo clones created during dry-run
 helm-repo/
-ccm-helm-sync
+# Ignore the local built binary (root-level) but not the source directory
+/ccm-helm-sync
 

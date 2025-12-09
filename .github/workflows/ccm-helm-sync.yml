@@ -1,10 +1,29 @@
-on:
 
 name: CCM Helm Chart Sync
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      helm_repo:
+        description: 'Target helm repo (owner/repo or URL)'
+        required: false
+        default: 'nutanix/helm'
+      ccm_tag:
+        description: 'CCM tag to use'
+        required: false
+      release_notes:
+        description: 'Release notes text'
+        required: false
+      dry_run:
+        description: 'Run in dry-run mode (true/false)'
+        required: false
+        default: 'true'
+      test:
+        description: 'Mark run as a test (adds [TEST] prefix)'
+        required: false
+        default: 'false'
 
 jobs:
   sync-helm-chart:
@@ -27,7 +46,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.CCM_HELM_SYNC_TOKEN }}
         run: |
+          # Read inputs (will be empty when triggered by `release`)
+          HELM_REPO="${{ github.event.inputs.helm_repo }}"
+          CCM_TAG="${{ github.event.inputs.ccm_tag }}"
+          RELEASE_NOTES="${{ github.event.inputs.release_notes }}"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+          TEST_RUN="${{ github.event.inputs.test }}"
+
+          # Provide sensible defaults when inputs are not set
+          if [ -z "$HELM_REPO" ]; then
+            HELM_REPO="nutanix/helm"
+          fi
+          if [ -z "$DRY_RUN" ]; then
+            DRY_RUN="true"
+          fi
+
+          # Build args
+          TAG_ARG=""
+          NOTE_ARG=""
+          DRY_ARG=""
+          TEST_ARG=""
+
+          if [ -n "$CCM_TAG" ]; then
+            TAG_ARG=("--ccm-tag" "$CCM_TAG")
+          fi
+          if [ -n "$RELEASE_NOTES" ]; then
+            NOTE_ARG=("--release-notes" "$RELEASE_NOTES")
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_ARG=("--dry-run")
+          fi
+          if [ "$TEST_RUN" = "true" ]; then
+            TEST_ARG=("--test")
+          fi
+
+          set -x
           go run ./cmd/ccm-helm-sync/main.go \
             --ccm-repo nutanix-cloud-native/cloud-provider-nutanix \
-            --helm-repo nutanix/helm \
-            --token "$GITHUB_TOKEN"
+            --helm-repo "$HELM_REPO" \
+            --token "$GITHUB_TOKEN" \
+            "${TAG_ARG[@]}" "${NOTE_ARG[@]}" "${DRY_ARG[@]}" "${TEST_ARG[@]}"

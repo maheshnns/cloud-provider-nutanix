@@ -69,7 +69,7 @@ func main() {
 	}
 
 	// 4. Commit, push, and create PR (or skip push/PR in dry-run)
-	if err := createPR(helmRepo, tag, dryRun, testMode, ccmRepo, releaseNotes); err != nil {
+	if err := createPR(helmRepo, tag, dryRun, testMode, ccmRepo, releaseNotes, token); err != nil {
 		log.Fatalf("Failed to create PR: %v", err)
 	}
 }
@@ -202,7 +202,7 @@ func updateChartAndChangelog(tag, releaseNotes string) error {
 	return nil
 }
 
-func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes string) error {
+func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes, token string) error {
 	branch := "test/ccm-automation-dry-run-" + tag
 	chartDir := "charts/cloud-provider-nutanix"
 	if err := GitBranch(branch, "helm-repo"); err != nil {
@@ -244,7 +244,7 @@ func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes 
 		return fmt.Errorf("git push: %w", err)
 	}
 
-	if err := CreatePR(prTitle, prBody, "helm-repo", os.Getenv("GITHUB_TOKEN"), repo, branch); err != nil {
+	if err := CreatePR(prTitle, prBody, "helm-repo", token, repo, branch); err != nil {
 		return fmt.Errorf("create PR via API: %w", err)
 	}
 

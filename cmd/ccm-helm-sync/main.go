@@ -97,11 +97,50 @@ func getLatestReleaseTagAndNotes(repo, token string) (string, string, error) {
 }
 
 func cloneHelmRepo(repo, token string) error {
-	url := fmt.Sprintf("https://%s@github.com/%s.git", token, repo)
+	url := normalizeCloneURL(repo, token)
 	cmd := exec.Command("git", "clone", url, "helm-repo")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// normalizeCloneURL accepts either an owner/repo (e.g. "maheshnns/helm") or
+// a full https URL (with or without .git) and returns a clone URL that embeds
+// the token for HTTPS authentication when appropriate.
+func normalizeCloneURL(repo, token string) string {
+	// If repo looks like an HTTP(S) URL, inject token into it
+	if strings.HasPrefix(repo, "http://") || strings.HasPrefix(repo, "https://") {
+		// Strip any trailing .git for normalization, we'll keep it if present
+		hasGit := strings.HasSuffix(repo, ".git")
+		// Remove scheme
+		schemeSep := "://"
+		parts := strings.SplitN(repo, schemeSep, 2)
+		if len(parts) != 2 {
+			return repo
+		}
+		hostAndPath := parts[1]
+		// If the URL already contains credentials (user@), avoid injecting
+		if strings.Contains(hostAndPath, "@") {
+			// already has creds; return as-is
+			return repo
+		}
+		if !hasGit {
+			hostAndPath = hostAndPath + ".git"
+		}
+		return fmt.Sprintf("https://%s@%s", token, hostAndPath)
+	}
+
+	// If repo starts with github.com/, strip that prefix
+	r := repo
+	if strings.HasPrefix(r, "github.com/") {
+		r = strings.TrimPrefix(r, "github.com/")
+	}
+
+	// Now treat as owner/repo form
+	if !strings.HasSuffix(r, ".git") {
+		r = r + ".git"
+	}
+	return fmt.Sprintf("https://%s@github.com/%s", token, r)
 }
 
 func updateChartAndChangelog(tag, releaseNotes string) error {

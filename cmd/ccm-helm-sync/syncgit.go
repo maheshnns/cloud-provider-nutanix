@@ -75,10 +75,35 @@ func CreatePR(title, body, dir, token, repo, branch string) error {
 		return fmt.Errorf("invalid repo format: %s", repo)
 	}
 
+	// Determine default base branch for the target repo (avoid hardcoding "main")
+	repoURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, name)
+	reqInfo, err := http.NewRequest("GET", repoURL, nil)
+	if err != nil {
+		return err
+	}
+	reqInfo.Header.Set("Accept", "application/vnd.github+json")
+	reqInfo.Header.Set("Authorization", "token "+token)
+	respInfo, err := http.DefaultClient.Do(reqInfo)
+	if err != nil {
+		return err
+	}
+	defer respInfo.Body.Close()
+	if respInfo.StatusCode < 200 || respInfo.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(respInfo.Body)
+		return fmt.Errorf("failed to fetch repo info: status %d body: %s", respInfo.StatusCode, string(bodyBytes))
+	}
+	var info struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.NewDecoder(respInfo.Body).Decode(&info); err != nil {
+		return err
+	}
+	baseBranch := info.DefaultBranch
+
 	payload := map[string]string{
 		"title": title,
 		"head":  branch,
-		"base":  "main",
+		"base":  baseBranch,
 		"body":  body,
 	}
 	b, err := json.Marshal(payload)

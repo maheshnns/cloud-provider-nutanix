@@ -71,9 +71,9 @@ jobs:
           set -x
           if [ -n "$RELEASE_NOTES" ]; then
             # pass release notes directly as an argument (quoted)
-            go run ./cmd/ccm-helm-sync/main.go --release-notes "$RELEASE_NOTES" "${ARGS[@]}"
+            go run ./cmd/ccm-helm-sync --release-notes "$RELEASE_NOTES" "${ARGS[@]}"
           else
-            go run ./cmd/ccm-helm-sync/main.go "${ARGS[@]}"
+            go run ./cmd/ccm-helm-sync "${ARGS[@]}"
           fi
 
       - name: Upload logs (artifact)

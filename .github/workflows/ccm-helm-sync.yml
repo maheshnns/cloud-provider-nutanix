@@ -95,7 +95,8 @@ jobs:
           fi
 
           set -x
-          go run ./cmd/ccm-helm-sync/main.go \
+          # Run the package so all source files in the package are compiled.
+          go run ./cmd/ccm-helm-sync \
             --ccm-repo nutanix-cloud-native/cloud-provider-nutanix \
             --helm-repo "$HELM_REPO" \
             --token "$GITHUB_TOKEN" \

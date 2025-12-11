@@ -1,6 +1,6 @@
 // cmd/ccm-helm-sync/main.go
 // This tool automates the creation of a CCM Helm chart and changelog after a new CCM release.
-// Usage: go run ./cmd/ccm-helm-sync --ccm-repo nutanix-cloud-native/cloud-provider-nutanix --helm-repo maheshnns/helm --token $GITHUB_TOKEN
+// Usage: go run ./cmd/ccm-helm-sync --ccm-repo nutanix-cloud-native/nutanix-cloud-provider--helm-repo nutanix/helm --token $GITHUB_TOKEN
 
 package main
 
@@ -22,7 +22,7 @@ func main() {
 	var dryRun bool
 	var releaseNotesFlag string
 	var testMode bool
-	flag.StringVar(&ccmRepo, "ccm-repo", "nutanix-cloud-native/cloud-provider-nutanix", "CCM GitHub repo")
+	flag.StringVar(&ccmRepo, "ccm-repo", "nutanix-cloud-native/nutanix-cloud-provider", "CCM GitHub repo")
 	flag.StringVar(&helmRepo, "helm-repo", "nutanix/helm", "Helm chart GitHub repo")
 	flag.StringVar(&token, "token", os.Getenv("GITHUB_TOKEN"), "GitHub token")
 	flag.StringVar(&ccmTag, "ccm-tag", "", "CCM release tag (optional, defaults to latest)")
@@ -182,21 +182,11 @@ func cloneHelmRepo(repo, token string) error {
 }
 
 func updateChartAndChangelog(tag, releaseNotes string) error {
-	chartDir := "helm-repo/charts/cloud-provider-nutanix"
+	chartDir := "helm-repo/charts/nutanix-cloud-provider"
 	chartYaml := chartDir + "/Chart.yaml"
-	valuesYaml := chartDir + "/values.yaml"
-	deploymentYaml := chartDir + "/templates/deployment.yaml"
-	changelog := chartDir + "/CHANGELOG.md"
 
 	if err := UpdateYamlVersion(chartYaml, tag); err != nil {
 		return fmt.Errorf("update Chart.yaml: %w", err)
-	}
-	if err := UpdateImageTag(valuesYaml, tag); err != nil {
-		return fmt.Errorf("update values.yaml: %w", err)
-	}
-	_ = UpdateImageTag(deploymentYaml, tag)
-	if err := PrependChangelog(changelog, tag, releaseNotes); err != nil {
-		return fmt.Errorf("update changelog: %w", err)
 	}
 	return nil
 }
@@ -207,7 +197,7 @@ func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes,
 	ts := time.Now().UTC().Format("20060102-150405")
 	safeTag := strings.TrimPrefix(tag, "v")
 	branch := fmt.Sprintf("test/ccm-automation-%s-%s", ts, safeTag)
-	chartDir := "charts/cloud-provider-nutanix"
+	chartDir := "charts/nutanix-cloud-provider"
 	if err := GitBranch(branch, "helm-repo"); err != nil {
 		return fmt.Errorf("git checkout -b: %w", err)
 	}
@@ -220,7 +210,7 @@ func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes,
 	if testMode {
 		commitPrefix = "[TEST] "
 	}
-	commitMsg := fmt.Sprintf("%scloud-provider-nutanix: update chart for CCM %s", commitPrefix, tag)
+	commitMsg := fmt.Sprintf("%snutanix-cloud-provider: update chart for CCM %s", commitPrefix, tag)
 	if err := GitCommit(commitMsg, "helm-repo"); err != nil {
 		return fmt.Errorf("git commit: %w", err)
 	}
@@ -230,7 +220,7 @@ func createPR(repo, tag string, dryRun, testMode bool, sourceRepo, releaseNotes,
 	if testMode {
 		prPrefix = "[TEST] "
 	}
-	prTitle := fmt.Sprintf("%scloud-provider-nutanix: update chart for CCM %s", prPrefix, tag)
+	prTitle := fmt.Sprintf("%snutanix-cloud-provider: update chart for CCM %s", prPrefix, tag)
 	prBody := fmt.Sprintf("%sAutomated update of CCM Helm chart and changelog.\n\nSource repo: %s\nCCM tag: %s\n\nRelease notes:\n%s\n\n/cc @nutanix-cloud-native/maintainers", prPrefix, sourceRepo, tag, releaseNotes)
 
 	if dryRun {

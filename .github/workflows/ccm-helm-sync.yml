@@ -67,7 +67,7 @@ jobs:
 
           # Default HELM_REPO to your fork if not provided
           if [ -z "$HELM_REPO" ]; then
-            HELM_REPO="maheshnns/helm"
+            HELM_REPO="nutanix/helm"
           fi
 
           # Default dry-run to true when not specified
@@ -96,8 +96,9 @@ jobs:
 
           set -x
           # Run the package so all source files in the package are compiled.
+
           go run ./cmd/ccm-helm-sync \
             --ccm-repo nutanix-cloud-native/cloud-provider-nutanix \
-            --helm-repo "$HELM_REPO" \
+            --helm-repo nutanix/helm \
             --token "$GITHUB_TOKEN" \
             "${TAG_ARG[@]}" "${NOTE_ARG[@]}" "${DRY_ARG[@]}" "${TEST_ARG[@]}"

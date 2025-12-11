@@ -14,7 +14,7 @@ on:
       helm_repo:
         description: 'Target helm repo in owner/repo form'
         required: true
-        default: 'maheshnns/helm'
+        default: 'nutanix/helm'
         type: string
       dry_run:
         description: 'Run in dry-run mode (true/false)'
@@ -58,7 +58,7 @@ jobs:
 
           # Defaults
           if [ -z "$HELM_REPO" ]; then
-            HELM_REPO="maheshnns/helm"
+            HELM_REPO="nutanix/helm"
           fi
           if [ -z "$DRY_RUN" ]; then
             DRY_RUN="true"

@@ -32,3 +32,11 @@ _artifacts
 profile.cov
 coverage.xml
 
+
+# Ignore local helm repo clones created during dry-run
+helm-repo/
+# Ignore specific backup of helm-repo created during local testing
+helm-repo.bak-20251210-170643/
+# Ignore the local built binary (root-level) but not the source directory
+/ccm-helm-sync
+

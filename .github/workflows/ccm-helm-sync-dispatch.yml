@@ -14,12 +14,12 @@ on:
       helm_repo:
         description: 'Target helm repo in owner/repo form'
         required: true
-        default: 'maheshnns/helm'
+        default: 'nutanix/helm'
         type: string
       dry_run:
         description: 'Run in dry-run mode (true/false)'
         required: false
-        default: 'true'
+        default: true
         type: boolean
 
 jobs:
@@ -34,28 +34,51 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install gh (CLI) for parity with prod runner
+      - name: Ensure required tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl ca-certificates
-          curl -L https://github.com/cli/cli/releases/latest/download/gh_$(curl -s https://api.github.com/repos/cli/cli/releases/latest | grep '"tag_name"' | sed -E "s/.*\"([^\"]+)\".*/\1/")_linux_amd64.tar.gz -o /tmp/gh.tar.gz
-          tar -xzf /tmp/gh.tar.gz -C /tmp
-          sudo mv /tmp/gh_*_linux_amd64/bin/gh /usr/local/bin/gh
-          gh --version
+          sudo apt-get install -y curl ca-certificates jq
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
 
       - name: Run CCM Helm sync (manual inputs)
         env:
           CCM_HELM_SYNC_TOKEN: ${{ secrets.CCM_HELM_SYNC_TOKEN }}
         run: |
           set -euo pipefail
-          ARGS="--helm-repo ${{ inputs.helm_repo }} --token $CCM_HELM_SYNC_TOKEN"
-          if [ -n "${{ inputs.ccm_tag }}" ]; then ARGS="$ARGS --ccm-tag ${{ inputs.ccm_tag }}"; fi
-          if [ "${{ inputs.dry_run }}" = 'true' ]; then ARGS="$ARGS --dry-run"; fi
-          if [ -n "${{ inputs.release_notes }}" ]; then
-            printf '%s' "${{ inputs.release_notes }}" > /tmp/release_notes
-            go run ./cmd/ccm-helm-sync --release-notes "$(cat /tmp/release_notes)" $ARGS
+
+          # Read workflow_dispatch inputs via github.event.inputs
+          HELM_REPO="${{ github.event.inputs.helm_repo }}"
+          CCM_TAG="${{ github.event.inputs.ccm_tag }}"
+          RELEASE_NOTES="${{ github.event.inputs.release_notes }}"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+
+          # Defaults
+          if [ -z "$HELM_REPO" ]; then
+            HELM_REPO="nutanix/helm"
+          fi
+          if [ -z "$DRY_RUN" ]; then
+            DRY_RUN="true"
+          fi
+
+          # Build argument list
+          ARGS=("--helm-repo" "$HELM_REPO" "--token" "$CCM_HELM_SYNC_TOKEN")
+          if [ -n "$CCM_TAG" ]; then
+            ARGS+=("--ccm-tag" "$CCM_TAG")
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS+=("--dry-run")
+          fi
+
+          set -x
+          if [ -n "$RELEASE_NOTES" ]; then
+            # pass release notes directly as an argument (quoted)
+            go run ./cmd/ccm-helm-sync --release-notes "$RELEASE_NOTES" "${ARGS[@]}"
           else
-            go run ./cmd/ccm-helm-sync $ARGS
+            go run ./cmd/ccm-helm-sync "${ARGS[@]}"
           fi
 
       - name: Upload logs (artifact)

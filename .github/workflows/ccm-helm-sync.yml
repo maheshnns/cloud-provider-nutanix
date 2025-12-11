@@ -46,17 +46,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.CCM_HELM_SYNC_TOKEN }}
         run: |
-          # Read inputs (will be empty when triggered by `release`)
+          # Read inputs (will be empty when triggered by `release`) and fall back
+          # to release event values when available. This ensures a published
+          # release in this repo drives the CLI using that release's tag/body.
           HELM_REPO="${{ github.event.inputs.helm_repo }}"
           CCM_TAG="${{ github.event.inputs.ccm_tag }}"
           RELEASE_NOTES="${{ github.event.inputs.release_notes }}"
           DRY_RUN="${{ github.event.inputs.dry_run }}"
           TEST_RUN="${{ github.event.inputs.test }}"
 
-          # Provide sensible defaults when inputs are not set
+          # When triggered by a release event, use the release payload if inputs
+          # were not provided (these expressions are evaluated by Actions at
+          # workflow render time and injected into the script).
+          if [ -z "$CCM_TAG" ] && [ -n "${{ github.event.release.tag_name }}" ]; then
+            CCM_TAG="${{ github.event.release.tag_name }}"
+          fi
+          if [ -z "$RELEASE_NOTES" ] && [ -n "${{ github.event.release.body }}" ]; then
+            RELEASE_NOTES="${{ github.event.release.body }}"
+          fi
+
+          # Default HELM_REPO to your fork if not provided
           if [ -z "$HELM_REPO" ]; then
             HELM_REPO="nutanix/helm"
           fi
+
+          # Default dry-run to true when not specified
           if [ -z "$DRY_RUN" ]; then
             DRY_RUN="true"
           fi
@@ -81,8 +95,10 @@ jobs:
           fi
 
           set -x
-          go run ./cmd/ccm-helm-sync/main.go \
+          # Run the package so all source files in the package are compiled.
+
+          go run ./cmd/ccm-helm-sync \
             --ccm-repo nutanix-cloud-native/cloud-provider-nutanix \
-            --helm-repo "$HELM_REPO" \
+            --helm-repo nutanix/helm \
             --token "$GITHUB_TOKEN" \
             "${TAG_ARG[@]}" "${NOTE_ARG[@]}" "${DRY_ARG[@]}" "${TEST_ARG[@]}"
